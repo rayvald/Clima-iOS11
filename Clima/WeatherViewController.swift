@@ -7,16 +7,20 @@
 //
 
 import UIKit
+import CoreLocation //importa las funcionalidades del GPS
+import Alamofire //Se utiliza para realizar request HTP
+import SwiftyJSON
 
-
-class WeatherViewController: UIViewController {
+class WeatherViewController: UIViewController, CLLocationManagerDelegate, ChangeCityDelegate {
     
     //Constants
     let WEATHER_URL = "http://api.openweathermap.org/data/2.5/weather"
-    let APP_ID = "e72ca729af228beabd5d20e3b7749713"
+    let APP_ID = "83ceae0db17f291e7b4d56e58cd6a3ed"
     
 
     //TODO: Declare instance variables here
+    let locationManager = CLLocationManager()
+    let weatherDataModel = WeatherDataModel()
     
 
     
@@ -31,17 +35,42 @@ class WeatherViewController: UIViewController {
         
         
         //TODO:Set up the location manager here.
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        locationManager.requestWhenInUseAuthorization()
+        /*Este método se ejecutará en segundo plano buscando la ubicación del gps
+         y cuando sea lo suficientemente precisa envia un mensaje al ViewController*/
+        
+        locationManager.startUpdatingLocation()
     
         
         
     }
     
-    
+
     
     //MARK: - Networking
     /***************************************************************/
     
     //Write the getWeatherData method here:
+    
+    func getWeatherData(url: String, parameters: [String : String]){
+        
+        Alamofire.request(url, method: .get, parameters: parameters).responseJSON {
+            response in
+            if response.result.isSuccess{
+                print("Success! Got the weather data!")
+                
+                let weatherJSON : JSON = JSON(response.result.value!)
+                //print(weatherJSON)
+                self.updateWeatherData(json: weatherJSON)
+        }
+        else {
+                print("Error \(String(describing: response.result.error))")
+            self.cityLabel.text = "Connection Issues"
+        }
+    }
+}
     
 
     
@@ -55,9 +84,24 @@ class WeatherViewController: UIViewController {
     
     //Write the updateWeatherData method here:
     
-
-    
-    
+    func updateWeatherData(json: JSON)  {
+        if let tempResult = json["main"]["temp"].double{
+        
+        weatherDataModel.tempeture = Int(tempResult - 273.15)
+        
+        weatherDataModel.city = json["name"].stringValue
+        
+        weatherDataModel.condition = json["weather"][0]["id"].intValue
+        
+        weatherDataModel.weatherIconName = weatherDataModel.updateWeatherIcon(condition: weatherDataModel.condition)
+            
+        updateUIWithWeatherData()
+            
+        }
+        else {
+            cityLabel.text = "Weather Unavailable"
+        }
+}
     
     //MARK: - UI Updates
     /***************************************************************/
@@ -65,8 +109,16 @@ class WeatherViewController: UIViewController {
     
     //Write the updateUIWithWeatherData method here:
     
-    
-    
+    func updateUIWithWeatherData() {
+        
+        cityLabel.text = weatherDataModel.city
+        
+        temperatureLabel.text = "\(weatherDataModel.tempeture)º"
+        
+        weatherIcon.image = UIImage(named: weatherDataModel.weatherIconName)
+        
+        
+    }
     
     
     
@@ -75,12 +127,36 @@ class WeatherViewController: UIViewController {
     
     
     //Write the didUpdateLocations method here:
+    /* Cuando locationManager termina de actualizar la ubicacion envia las coordenadas
+       y para resivirlas debemos incluir el siguiente metodo*/
     
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        //cada vez que locationManager.startUpdatingLocation() obtiene un  nuevo valor lo agrega a la matriz [CLLocation]
+        let location = locations[locations.count - 1]
+        if location.horizontalAccuracy > 0 {
+            locationManager.stopUpdatingLocation() //Siempre hay que hacer stop al UpdatingLocations, sino destruiremos la bateria del
+            locationManager.delegate = nil //Crea un retraso en el stopUpdatngLocation
+            
+            print("Longitude: \(location.coordinate.longitude), Latidude: \(location.coordinate.latitude)")
+            let latitude = String(location.coordinate.latitude)
+            let longitude = String(location.coordinate.longitude)
+            
+            let params : [String: String] = ["lat" : latitude, "lon" : longitude, "appid" : APP_ID]
+            
+            getWeatherData(url: WEATHER_URL, parameters: params)
+            
+        }
+    }
     
     
     //Write the didFailWithError method here:
+    //Este metodo viene del locationManager que le dice al delegate(WeatherViewController) que no pudo encontrar la ubicacion
     
-    
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print(error)
+        cityLabel.text = "Location Unavailable"
+        
+    }
     
 
     
@@ -88,15 +164,24 @@ class WeatherViewController: UIViewController {
     /***************************************************************/
     
     
-    //Write the userEnteredANewCityName Delegate method here:
     
+    
+    //Write the userEnteredANewCityName Delegate method here:
+    func userEnteredNewCityName(city: String) {
+        let params : [String : String] = ["q" : city, "appid" : APP_ID]
+        getWeatherData(url: WEATHER_URL, parameters: params)
+    }
 
     
     //Write the PrepareForSegue Method here
-    
-    
-    
-    
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if segue.identifier == "changeCityName"{
+            
+            let destinationVC = segue.destination as! ChangeCityViewController
+            
+            destinationVC.delegate = self
+        }
+    }
     
 }
 
